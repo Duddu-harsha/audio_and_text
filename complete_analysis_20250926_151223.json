@@ -1,0 +1,166 @@
+{
+  "video_path": "/home/ubuntu/audio_and_text/videos/rayv.mp4",
+  "analysis_timestamp": "2025-09-26T15:12:23.208070",
+  "video_info": {
+    "duration": 27.6,
+    "original_fps": 30.0,
+    "extraction_fps": 1,
+    "frames_extracted": 28
+  },
+  "content_safety": "safe",
+  "toxicity_assessment": {
+    "level": "safe",
+    "confidence": "high",
+    "sources": [
+      "visual",
+      "audio"
+    ],
+    "visual_score": 0.0,
+    "audio_score": 0.0
+  },
+  "safety_explanation": "Content appears SAFE based on analysis of 31 visual text elements and audio transcript (72 words). No genuine toxic language identified across visual and audio content.",
+  "visual_analysis": {
+    "detected_texts": [
+      "to be notified about our launcha",
+      "from there, your customers take",
+      "expensive, time consuming; and",
+      "confusing marketing strategies",
+      "all you have to do is create a",
+      "join our waitlist in the bio",
+      "there's no andl that's itl",
+      "are you tired of managing",
+      "that turns customers into",
+      "marketers for businesses",
+      "create a campaign and:",
+      "Im Tanav and we built",
+      "over your marketing",
+      "Marketing for SMBs",
+      "using our appl",
+      "an app called",
+      "your business",
+      "BRAYVAPP;",
+      "business'",
+      "account",
+      "Monaoo",
+      "tapio]",
+      "t901o]",
+      "Jeplo?",
+      "Rayv'",
+      "tanio",
+      "tepio",
+      "IUOV",
+      "Baad",
+      "INOV",
+      "IUC"
+    ],
+    "text_count": 31,
+    "sentiment_analysis": {
+      "overall": "negative",
+      "score": -0.544,
+      "individual": [
+        {
+          "text": "to be notified about our launcha from there, your customers take expensive, time consuming; and conf...",
+          "sentiment": "negative",
+          "confidence": 0.5436146855354309
+        }
+      ],
+      "source": "visual"
+    },
+    "toxicity_assessment": {
+      "level": "safe",
+      "confidence": "high",
+      "score": 0.0
+    },
+    "toxicity_flags": {
+      "high_confidence": [],
+      "medium_confidence": [],
+      "false_positives": []
+    }
+  },
+  "audio_analysis": {
+    "transcript": "Are you tired of managing your business's expensive time consuming and confusing marketing strategies? I'm Tanov and we build an app called RAVE that turns customers into marketers for businesses. All you have to do is create a RAVE account, create a campaign, and there's no end. That's it. From there, your customers take over your marketing using our app. Join our waitlist in the bio to be notified about our launch.",
+    "transcription_confidence": 0.98,
+    "word_count": 72,
+    "duration": 27.76,
+    "segments": [
+      {
+        "start": 0.0,
+        "end": 5.34,
+        "text": "Are you tired of managing your business's expensive time consuming and confusing marketing strategies?",
+        "confidence": 0.9797115381807089
+      },
+      {
+        "start": 5.34,
+        "end": 10.8,
+        "text": "I'm Tanov and we build an app called RAVE that turns customers into marketers for businesses.",
+        "confidence": 0.9797115381807089
+      },
+      {
+        "start": 10.8,
+        "end": 16.7,
+        "text": "All you have to do is create a RAVE account, create a campaign, and there's no end. That's it.",
+        "confidence": 0.9797115381807089
+      },
+      {
+        "start": 16.7,
+        "end": 20.02,
+        "text": "From there, your customers take over your marketing using our app.",
+        "confidence": 0.9797115381807089
+      },
+      {
+        "start": 20.02,
+        "end": 23.5,
+        "text": "Join our waitlist in the bio to be notified about our launch.",
+        "confidence": 0.9797115381807089
+      }
+    ],
+    "sentiment_analysis": {
+      "overall": "neutral",
+      "score": 0.0,
+      "individual": [
+        {
+          "text": "Are you tired of managing your business's expensive time consuming and confusing marketing strategie...",
+          "sentiment": "neutral",
+          "confidence": 0.6092787981033325
+        }
+      ],
+      "source": "audio"
+    },
+    "toxicity_assessment": {
+      "level": "safe",
+      "confidence": "high",
+      "score": 0.0
+    },
+    "toxicity_flags": {
+      "high_confidence": [],
+      "medium_confidence": [],
+      "false_positives": []
+    }
+  },
+  "combined_toxicity_flags": {
+    "high_confidence": [],
+    "medium_confidence": [],
+    "false_positives": []
+  },
+  "processing_summary": {
+    "visual_detections": 131,
+    "visual_verified_texts": 31,
+    "audio_transcription_status": "success",
+    "audio_confidence": 0.98,
+    "frames_with_text": 28,
+    "engines_used": {
+      "visual": [
+        "easy",
+        "tesseract"
+      ],
+      "audio": [
+        "whisper"
+      ]
+    },
+    "languages_checked": [
+      "english",
+      "hindi",
+      "telugu"
+    ]
+  }
+}
