@@ -14,21 +14,52 @@ import warnings
 from difflib import SequenceMatcher
 import tempfile
 import os
-import config
+import yaml
 
 warnings.filterwarnings("ignore")
 
+class ConfigLoader:
+    """Loads and provides access to configuration from YAML file"""
+    
+    def __init__(self, config_path='config.yaml'):
+        """Load configuration from YAML file"""
+        if not os.path.exists(config_path):
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            self.config = yaml.safe_load(f)
+        
+        print(f"✓ Configuration loaded from {config_path}")
+    
+    def get(self, *keys, default=None):
+        """Navigate nested config structure using multiple keys"""
+        value = self.config
+        for key in keys:
+            if isinstance(value, dict):
+                value = value.get(key, default)
+            else:
+                return default
+        return value
+
 class CompleteVideoContentAnalyzer:
-    def __init__(self, whisper_model_size=config.DEFAULT_WHISPER_MODEL):
+    def __init__(self, whisper_model_size=None, config_path='config.yaml'):
         """Initialize with text and audio analysis capabilities"""
         print("Initializing complete content analyzer...")
+        
+        # Load configuration
+        self.config = ConfigLoader(config_path)
+        
+        # Use provided model size or get from config
+        if whisper_model_size is None:
+            whisper_model_size = self.config.get('whisper', 'default_model')
         
         # OCR Engines
         self.ocr_engines = {}
         
         # EasyOCR (primary)
         try:
-            self.ocr_engines['easy'] = easyocr.Reader(config.OCR_LANGUAGES, gpu=torch.cuda.is_available())
+            languages = self.config.get('ocr', 'languages')
+            self.ocr_engines['easy'] = easyocr.Reader(languages, gpu=torch.cuda.is_available())
             print("✓ EasyOCR initialized")
         except Exception as e:
             print(f"✗ EasyOCR failed: {e}")
@@ -51,10 +82,11 @@ class CompleteVideoContentAnalyzer:
         
         # Sentiment Analysis
         device = 0 if torch.cuda.is_available() else -1
+        sentiment_models = self.config.get('sentiment', 'models')
         try:
             self.sentiment_analyzer = pipeline(
                 "sentiment-analysis",
-                model=config.SENTIMENT_MODELS[0],
+                model=sentiment_models[0],
                 device=device
             )
             print("✓ Sentiment analyzer loaded")
@@ -62,7 +94,7 @@ class CompleteVideoContentAnalyzer:
             try:
                 self.sentiment_analyzer = pipeline(
                     "sentiment-analysis",
-                    model=config.SENTIMENT_MODELS[1],
+                    model=sentiment_models[1],
                     device=device
                 )
                 print("✓ Fallback sentiment analyzer loaded")
@@ -71,20 +103,23 @@ class CompleteVideoContentAnalyzer:
                 self.sentiment_analyzer = None
         
         # Load toxic words and false positive contexts from config
-        self.toxic_words = config.TOXIC_WORDS
-        self.false_positive_contexts = config.FALSE_POSITIVE_CONTEXTS
+        self.toxic_words = self.config.get('toxicity', default={})
+        self.false_positive_contexts = self.config.get('false_positives', default={})
         
         print("✓ Enhanced toxicity detection initialized")
         print("Initialization complete!")
     
     def calculate_dynamic_fps(self, duration: float) -> int:
         """Calculate optimal FPS based on video duration"""
-        if duration < config.VIDEO_DURATION_THRESHOLDS['short']:
-            return config.FRAME_EXTRACTION_FPS['short_video']
-        elif duration <= config.VIDEO_DURATION_THRESHOLDS['medium']:
-            return config.FRAME_EXTRACTION_FPS['medium_video']
+        thresholds = self.config.get('video', 'duration_thresholds')
+        fps_config = self.config.get('video', 'frame_extraction_fps')
+        
+        if duration < thresholds['short']:
+            return fps_config['short_video']
+        elif duration <= thresholds['medium']:
+            return fps_config['medium_video']
         else:
-            return config.FRAME_EXTRACTION_FPS['long_video']
+            return fps_config['long_video']
     
     def extract_audio_from_video(self, video_path: str) -> Tuple[str, Dict]:
         """Extract audio track from video"""
@@ -147,20 +182,18 @@ class CompleteVideoContentAnalyzer:
             temp_audio_path = temp_audio.name
             temp_audio.close()
             
-            # Use ffmpeg to extract audio
-            cmd = [param.format(input=video_path, output=temp_audio_path) if '{' in param 
-                   else param for param in config.FFMPEG_AUDIO_EXTRACT_CMD]
-            cmd = [video_path if param == '{input}' else temp_audio_path if param == '{output}' 
-                   else param for param in config.FFMPEG_AUDIO_EXTRACT_CMD]
+            # Build ffmpeg command from config
+            cmd_template = self.config.get('ffmpeg', 'audio_extract')
+            cmd = [param.replace('{input}', video_path).replace('{output}', temp_audio_path) 
+                   for param in cmd_template]
             
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode == 0:
                 # Get duration using ffprobe
-                duration_cmd = [param.format(input=video_path) if '{' in param 
-                               else param for param in config.FFMPEG_DURATION_CMD]
-                duration_cmd = [video_path if param == '{input}' else param 
-                               for param in config.FFMPEG_DURATION_CMD]
+                duration_cmd_template = self.config.get('ffmpeg', 'duration')
+                duration_cmd = [param.replace('{input}', video_path) 
+                               for param in duration_cmd_template]
                 duration_result = subprocess.run(duration_cmd, capture_output=True, text=True)
                 
                 try:
@@ -168,10 +201,11 @@ class CompleteVideoContentAnalyzer:
                 except:
                     duration = 0.0
                 
+                sample_rate = self.config.get('audio', 'sample_rate')
                 audio_info = {
                     "status": "success",
                     "duration": duration,
-                    "fps": config.AUDIO_SAMPLE_RATE,
+                    "fps": sample_rate,
                     "temp_path": temp_audio_path,
                     "method": "ffmpeg"
                 }
@@ -213,13 +247,16 @@ class CompleteVideoContentAnalyzer:
             
             # Calculate average confidence from segments
             confidences = []
+            no_speech_default = self.config.get('whisper', 'no_speech_prob_default')
+            
             for segment in segments:
                 if 'no_speech_prob' in segment:
                     # Convert no_speech_prob to confidence
                     speech_confidence = 1.0 - segment['no_speech_prob']
                     confidences.append(speech_confidence)
             
-            avg_confidence = np.mean(confidences) if confidences else config.WHISPER_CONFIDENCE_DEFAULT
+            whisper_confidence_default = self.config.get('whisper', 'confidence_default')
+            avg_confidence = np.mean(confidences) if confidences else whisper_confidence_default
             
             print(f"✓ Transcription complete: {len(transcript)} characters")
             if transcript:
@@ -235,7 +272,7 @@ class CompleteVideoContentAnalyzer:
                         "start": seg.get("start", 0),
                         "end": seg.get("end", 0),
                         "text": seg.get("text", "").strip(),
-                        "confidence": 1.0 - seg.get("no_speech_prob", config.NO_SPEECH_PROB_DEFAULT)
+                        "confidence": 1.0 - seg.get("no_speech_prob", no_speech_default)
                     } for seg in segments if seg.get("text", "").strip()
                 ],
                 "word_count": len(transcript.split()) if transcript else 0
@@ -272,6 +309,7 @@ class CompleteVideoContentAnalyzer:
         frames = []
         frame_count = 0
         timestamps = []
+        max_width = self.config.get('video', 'max_width')
         
         while True:
             ret, frame = cap.read()
@@ -283,8 +321,8 @@ class CompleteVideoContentAnalyzer:
                 
                 # Resize if too large
                 height, width = frame.shape[:2]
-                if width > config.MAX_VIDEO_WIDTH:
-                    scale = config.MAX_VIDEO_WIDTH / width
+                if width > max_width:
+                    scale = max_width / width
                     new_width = int(width * scale)
                     new_height = int(height * scale)
                     frame = cv2.resize(frame, (new_width, new_height))
@@ -313,9 +351,10 @@ class CompleteVideoContentAnalyzer:
         try:
             results = self.ocr_engines['easy'].readtext(frame)
             texts = []
+            confidence_threshold = self.config.get('ocr', 'confidence_threshold')
             
             for (bbox, text, confidence) in results:
-                if text and len(text.strip()) > 0 and confidence > config.OCR_CONFIDENCE_THRESHOLD:
+                if text and len(text.strip()) > 0 and confidence > confidence_threshold:
                     texts.append({
                         "text": text.strip(),
                         "confidence": float(confidence),
@@ -336,14 +375,17 @@ class CompleteVideoContentAnalyzer:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             
-            data = pytesseract.image_to_data(thresh, config=config.TESSERACT_CONFIG, output_type=pytesseract.Output.DICT)
+            tesseract_config = self.config.get('ocr', 'tesseract', 'config')
+            data = pytesseract.image_to_data(thresh, config=tesseract_config, output_type=pytesseract.Output.DICT)
             
             texts = []
+            confidence_threshold = self.config.get('ocr', 'tesseract', 'confidence_threshold')
+            
             for i in range(len(data['text'])):
                 text = data['text'][i].strip()
                 confidence = float(data['conf'][i])
                 
-                if text and len(text) > 0 and confidence > config.TESSERACT_CONFIDENCE_THRESHOLD:
+                if text and len(text) > 0 and confidence > confidence_threshold:
                     texts.append({
                         "text": text,
                         "confidence": confidence / 100.0,
@@ -365,6 +407,8 @@ class CompleteVideoContentAnalyzer:
         
         merged = []
         used = set()
+        similarity_threshold = self.config.get('text', 'similarity_threshold')
+        min_text_length = self.config.get('text', 'min_length')
         
         for text in unique_texts:
             if text.lower() in used:
@@ -374,11 +418,11 @@ class CompleteVideoContentAnalyzer:
             is_subset = False
             for merged_text in merged:
                 similarity = SequenceMatcher(None, text.lower(), merged_text.lower()).ratio()
-                if similarity > config.SIMILARITY_THRESHOLD or text.lower() in merged_text.lower():
+                if similarity > similarity_threshold or text.lower() in merged_text.lower():
                     is_subset = True
                     break
             
-            if not is_subset and len(text) > config.MIN_TEXT_LENGTH:
+            if not is_subset and len(text) > min_text_length:
                 merged.append(text)
                 used.add(text.lower())
         
@@ -418,10 +462,13 @@ class CompleteVideoContentAnalyzer:
         merged_texts = self.merge_similar_texts(all_raw_texts)
         
         # Clean up texts (remove single characters, numbers only, punctuation only)
+        cleanup_pattern = self.config.get('text', 'cleanup_pattern')
+        min_text_length = self.config.get('text', 'min_length')
+        
         cleaned_texts = []
         for text in merged_texts:
-            cleaned = re.sub(config.TEXT_CLEANUP_PATTERN, ' ', text).strip()
-            if len(cleaned) > config.MIN_TEXT_LENGTH and not cleaned.isdigit() and any(c.isalpha() for c in cleaned):
+            cleaned = re.sub(cleanup_pattern, ' ', text).strip()
+            if len(cleaned) > min_text_length and not cleaned.isdigit() and any(c.isalpha() for c in cleaned):
                 cleaned_texts.append(text)  # Keep original formatting
         
         print(f"✓ Visual text extraction: {len(cleaned_texts)} verified texts")
@@ -437,6 +484,8 @@ class CompleteVideoContentAnalyzer:
         if not texts or not self.sentiment_analyzer:
             return {"overall": "neutral", "score": 0.0, "individual": [], "source": source}
         
+        text_merge_min = self.config.get('text', 'merge_min_length')
+        
         # For audio, treat as single text block
         if source == "audio" and len(texts) == 1:
             text_to_analyze = texts[0]
@@ -445,10 +494,11 @@ class CompleteVideoContentAnalyzer:
         
         individual_sentiments = []
         scores = []
+        max_length = self.config.get('sentiment', 'text_max_length')
         
-        if len(text_to_analyze) > config.TEXT_MERGE_MIN_LENGTH:
+        if len(text_to_analyze) > text_merge_min:
             try:
-                result = self.sentiment_analyzer(text_to_analyze[:config.SENTIMENT_TEXT_MAX_LENGTH])[0]
+                result = self.sentiment_analyzer(text_to_analyze[:max_length])[0]
                 label = result["label"].lower()
                 score = float(result["score"])
                 
@@ -483,11 +533,12 @@ class CompleteVideoContentAnalyzer:
                 scores.append(0)
         
         # Calculate overall sentiment
+        thresholds = self.config.get('sentiment', 'score_thresholds')
         if scores:
             avg_score = np.mean(scores)
-            if avg_score > config.SENTIMENT_SCORE_THRESHOLDS['positive']:
+            if avg_score > thresholds['positive']:
                 overall = "positive"
-            elif avg_score < config.SENTIMENT_SCORE_THRESHOLDS['negative']:
+            elif avg_score < thresholds['negative']:
                 overall = "negative"
             else:
                 overall = "neutral"
@@ -619,9 +670,10 @@ class CompleteVideoContentAnalyzer:
         visual_level = visual_toxicity.get("level", "safe")
         audio_level = audio_toxicity.get("level", "safe")
         
-        combined_level = config.SAFETY_LEVELS[max(
-            config.SAFETY_LEVELS.index(visual_level),
-            config.SAFETY_LEVELS.index(audio_level)
+        safety_levels = self.config.get('safety', 'levels')
+        combined_level = safety_levels[max(
+            safety_levels.index(visual_level),
+            safety_levels.index(audio_level)
         )]
         
         # Combine flags
@@ -823,16 +875,22 @@ def main():
     # Get video path
     if len(sys.argv) > 1:
         video_path = sys.argv[1]
-        whisper_model = sys.argv[2] if len(sys.argv) > 2 else config.DEFAULT_WHISPER_MODEL
+        whisper_model = sys.argv[2] if len(sys.argv) > 2 else None
+        config_path = sys.argv[3] if len(sys.argv) > 3 else 'config.yaml'
     else:
-        video_files = [f for f in os.listdir('.') if f.lower().endswith(tuple(config.VIDEO_EXTENSIONS))]
+        config = ConfigLoader('config.yaml')
+        video_extensions = config.get('video', 'extensions')
+        video_files = [f for f in os.listdir('.') if f.lower().endswith(tuple(video_extensions))]
+        
         if video_files:
             video_path = video_files[0]
-            whisper_model = config.DEFAULT_WHISPER_MODEL
+            whisper_model = None
+            config_path = 'config.yaml'
             print(f"No video specified, using: {video_path}")
         else:
-            print("Usage: python complete_analyzer.py <video_file> [whisper_model_size]")
+            print("Usage: python complete_analyzer.py <video_file> [whisper_model_size] [config_path]")
             print("Whisper model sizes: tiny, base, small, medium, large")
+            print("Config path: path to YAML configuration file (default: config.yaml)")
             return
     
     if not os.path.exists(video_path):
@@ -841,11 +899,17 @@ def main():
     
     try:
         # Process video with both text and audio analysis
-        analyzer = CompleteVideoContentAnalyzer(whisper_model_size=whisper_model)
+        analyzer = CompleteVideoContentAnalyzer(
+            whisper_model_size=whisper_model,
+            config_path=config_path
+        )
         results = analyzer.process_video_complete(video_path)
         
         # Generate clean JSON output
-        output_filename = f"{config.OUTPUT_FILE_PREFIX}{datetime.now().strftime(config.OUTPUT_DATE_FORMAT)}.json"
+        config = ConfigLoader(config_path)
+        output_prefix = config.get('output', 'file_prefix')
+        date_format = config.get('output', 'date_format')
+        output_filename = f"{output_prefix}{datetime.now().strftime(date_format)}.json"
         
         with open(output_filename, "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False, default=str)
